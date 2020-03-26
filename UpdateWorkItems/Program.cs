@@ -75,7 +75,7 @@ namespace UpdateWorkItems
             int rangeIncrement = 200;
             do
             {
-                var tempids = wiIds.GetRange(startIndex, rangeIncrement);
+                var tempids = wiIds.GetRange(startIndex, Math.Min(rangeIncrement,wiIds.Count-1-startIndex));
                 startIndex += rangeIncrement;
                 foreach (var item in workItemTrackingHttpClient.GetWorkItemsAsync(tempids, expand: WorkItemExpand.Relations).Result)
                 {
@@ -98,44 +98,54 @@ namespace UpdateWorkItems
                                 Guid reposotoryID = Guid.Parse(ids[6]);
                                 Guid projectId = Guid.Parse(ids[5]);
                                 string projectName = GetProjectName(projectHttpClient, projectId.ToString());
-
-                                var activeProjectRepos = gitClient.GetRepositoriesAsync(projectId).Result;
-                                //we assume we will have some selection criteria
-                                //var selectedRepo = repos.Where(item => item.Id == reposotoryID);
                                 bool isDeletedRepo = false;
                                 bool isDestroyedRepo = false;
                                 bool isTargetingExpectedRepo = false;
                                 bool isTargetingExpectedProject = false;
                                 string repoName = "";
 
-                                var linkedActiveRepo = (from r in activeProjectRepos where r.Id == reposotoryID select r).SingleOrDefault();
-                                if (linkedActiveRepo == null)
+                                if (string.IsNullOrEmpty(projectName))
                                 {
-                                    var deletedRepos = gitClient.GetDeletedRepositoriesAsync(projectId).Result;
-                                    var deletedLinkedRepo = (from r in deletedRepos where r.Id == reposotoryID select r).SingleOrDefault();
-                                    if (deletedLinkedRepo != null)
-                                    {
-                                        repoName = deletedLinkedRepo.Name;
-                                        isDeletedRepo = true;
-                                    }
-                                    else
-                                    {
-                                        isDestroyedRepo = true;
-                                    }
+                                    isDeletedRepo = true;
+                                    isDestroyedRepo = true;
+                                    isTargetingExpectedRepo = false;
+                                    isTargetingExpectedProject = false;
                                 }
                                 else
                                 {
-                                    repoName = linkedActiveRepo.Name;
-                                    if (repoName == targetRepoName)
+                                    var activeProjectRepos = gitClient.GetRepositoriesAsync(projectId).Result;
+                                    //we assume we will have some selection criteria
+                                    //var selectedRepo = repos.Where(item => item.Id == reposotoryID);
+
+
+                                    var linkedActiveRepo = (from r in activeProjectRepos where r.Id == reposotoryID select r).SingleOrDefault();
+                                    if (linkedActiveRepo == null)
                                     {
-                                        isTargetingExpectedRepo = true;
+                                        var deletedRepos = gitClient.GetDeletedRepositoriesAsync(projectId).Result;
+                                        var deletedLinkedRepo = (from r in deletedRepos where r.Id == reposotoryID select r).SingleOrDefault();
+                                        if (deletedLinkedRepo != null)
+                                        {
+                                            repoName = deletedLinkedRepo.Name;
+                                            isDeletedRepo = true;
+                                        }
+                                        else
+                                        {
+                                            isDestroyedRepo = true;
+                                        }
                                     }
-                                    if (targetProjectDetails.Id == projectId)
+                                    else
                                     {
-                                        isTargetingExpectedProject = true;
+                                        repoName = linkedActiveRepo.Name;
+                                        if (repoName == targetRepoName)
+                                        {
+                                            isTargetingExpectedRepo = true;
+                                        }
+                                        if (targetProjectDetails.Id == projectId)
+                                        {
+                                            isTargetingExpectedProject = true;
+                                        }
                                     }
                                 }
-
 
                                 GitCommit commitDetails = null;
                                 //var repo = gitClient.GetRepositoryAsync(repositoryId).Result;
@@ -207,8 +217,8 @@ namespace UpdateWorkItems
 
             private static VssConnection GetConnection(string collectionUrl)
         {
-            return new VssConnection(new Uri(collectionUrl), new VssBasicCredential("PAT", "PAT"));
-            //return new VssConnection(new Uri(collectionUrl), new WindowsCredential(true));
+            //return new VssConnection(new Uri(collectionUrl), new VssBasicCredential("PAT", "PAT"));
+            return new VssConnection(new Uri(collectionUrl), new WindowsCredential(true));
         }
 
         private static string GetProjectName(ProjectHttpClient projectHttpClient, string projectID)
