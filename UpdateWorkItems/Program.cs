@@ -71,98 +71,103 @@ namespace UpdateWorkItems
 
             var wiIds = GetWorkItemsIds(workItemTrackingHttpClient);
             GitHttpClient gitClient = connection.GetClient<GitHttpClient>();
-
-            foreach (var item in workItemTrackingHttpClient.GetWorkItemsAsync(wiIds, expand: WorkItemExpand.Relations).Result)
+            int startIndex = 0;
+            int rangeIncrement = 200;
+            do
             {
-
-                //var item = workItemTrackingHttpClient.GetWorkItemAsync(workitemSource, 406, expand: WorkItemExpand.Relations).Result;
-                var gitCommits = item.Relations.Where(item => item.Rel == "ArtifactLink");
-                //  vstfs:///Git/Commit/{project ID}/{repository ID}/{Commit ID}"
-                var targetGitRepoDetails = gitClient.GetRepositoryAsync(targetTeamProject, targetRepoName).Result;
-                TeamProject targetProjectDetails = GetprojectDetails(projectHttpClient, targetTeamProject);
-
-
-                foreach (var artifactLink in gitCommits)
+                var tempids = wiIds.GetRange(startIndex, rangeIncrement);
+                startIndex += rangeIncrement;
+                foreach (var item in workItemTrackingHttpClient.GetWorkItemsAsync(tempids, expand: WorkItemExpand.Relations).Result)
                 {
-                    if (artifactLink.Url.Contains("Git"))
+
+                    //var item = workItemTrackingHttpClient.GetWorkItemAsync(workitemSource, 406, expand: WorkItemExpand.Relations).Result;
+                    var gitCommits = item.Relations.Where(element => element.Rel == "ArtifactLink");
+                    //  vstfs:///Git/Commit/{project ID}/{repository ID}/{Commit ID}"
+                    var targetGitRepoDetails = gitClient.GetRepositoryAsync(targetTeamProject, targetRepoName).Result;
+                    TeamProject targetProjectDetails = GetprojectDetails(projectHttpClient, targetTeamProject);
+
+
+                    foreach (var artifactLink in gitCommits)
                     {
-                        string[] ids = WebUtility.UrlDecode(artifactLink.Url).Split('/');
-                        if (ids[4] == "Commit")
+                        if (artifactLink.Url.Contains("Git"))
                         {
-                            string commitID = ids[7];
-                            Guid reposotoryID = Guid.Parse(ids[6]);
-                            Guid projectId = Guid.Parse(ids[5]);
-                            string projectName = GetProjectName(projectHttpClient, projectId.ToString());
-
-                            var activeProjectRepos = gitClient.GetRepositoriesAsync(projectId).Result;
-                            //we assume we will have some selection criteria
-                            //var selectedRepo = repos.Where(item => item.Id == reposotoryID);
-                            bool isDeletedRepo = false;
-                            bool isDestroyedRepo = false;
-                            bool isTargetingExpectedRepo = false;
-                            bool isTargetingExpectedProject = false;
-                            string repoName = "";
-
-                            var linkedActiveRepo = (from r in activeProjectRepos where r.Id == reposotoryID select r).SingleOrDefault();
-                            if (linkedActiveRepo == null)
+                            string[] ids = WebUtility.UrlDecode(artifactLink.Url).Split('/');
+                            if (ids[4] == "Commit")
                             {
-                                var deletedRepos = gitClient.GetDeletedRepositoriesAsync(projectId).Result;
-                                var deletedLinkedRepo = (from r in deletedRepos where r.Id == reposotoryID select r).SingleOrDefault();
-                                if (deletedLinkedRepo != null)
+                                string commitID = ids[7];
+                                Guid reposotoryID = Guid.Parse(ids[6]);
+                                Guid projectId = Guid.Parse(ids[5]);
+                                string projectName = GetProjectName(projectHttpClient, projectId.ToString());
+
+                                var activeProjectRepos = gitClient.GetRepositoriesAsync(projectId).Result;
+                                //we assume we will have some selection criteria
+                                //var selectedRepo = repos.Where(item => item.Id == reposotoryID);
+                                bool isDeletedRepo = false;
+                                bool isDestroyedRepo = false;
+                                bool isTargetingExpectedRepo = false;
+                                bool isTargetingExpectedProject = false;
+                                string repoName = "";
+
+                                var linkedActiveRepo = (from r in activeProjectRepos where r.Id == reposotoryID select r).SingleOrDefault();
+                                if (linkedActiveRepo == null)
                                 {
-                                    repoName = deletedLinkedRepo.Name;
-                                    isDeletedRepo = true;
+                                    var deletedRepos = gitClient.GetDeletedRepositoriesAsync(projectId).Result;
+                                    var deletedLinkedRepo = (from r in deletedRepos where r.Id == reposotoryID select r).SingleOrDefault();
+                                    if (deletedLinkedRepo != null)
+                                    {
+                                        repoName = deletedLinkedRepo.Name;
+                                        isDeletedRepo = true;
+                                    }
+                                    else
+                                    {
+                                        isDestroyedRepo = true;
+                                    }
                                 }
                                 else
                                 {
-                                    isDestroyedRepo = true;
+                                    repoName = linkedActiveRepo.Name;
+                                    if (repoName == targetRepoName)
+                                    {
+                                        isTargetingExpectedRepo = true;
+                                    }
+                                    if (targetProjectDetails.Id == projectId)
+                                    {
+                                        isTargetingExpectedProject = true;
+                                    }
                                 }
-                            }
-                            else
-                            {
-                                repoName = linkedActiveRepo.Name;
-                                if (repoName == targetRepoName)
+
+
+                                GitCommit commitDetails = null;
+                                //var repo = gitClient.GetRepositoryAsync(repositoryId).Result;
+                                if (isDeletedRepo == false && isDestroyedRepo == false)
                                 {
-                                    isTargetingExpectedRepo = true;
+                                    commitDetails = gitClient.GetCommitAsync(projectId, commitID, reposotoryID).Result;
                                 }
-                                if (targetProjectDetails.Id == projectId)
+                                ArtifactLinkCsvRecord record = new ArtifactLinkCsvRecord
                                 {
-                                    isTargetingExpectedProject = true;
-                                }
+                                    WorkItemID = item.Id,
+                                    WorkItemUrl = item.Url,
+                                    ArtifactUri = artifactLink.Url,
+                                    commitID = commitID,
+                                    IsDeletedRepo = isDeletedRepo,
+                                    isDestroyedRepo = isDestroyedRepo,
+                                    isTargetingExpectedProject = isTargetingExpectedProject,
+                                    isTargetingExpectedRepo = isTargetingExpectedRepo,
+                                    LinkedProjectName = projectName,
+                                    LinkedRepoId = reposotoryID,
+                                    LinkedRepoName = repoName,
+                                    shortCommitID = commitID.Substring(0, 8)
+                                };
+
+                                records.Add(record);
+                                Console.WriteLine($"workItemID={item.Id} projectName={projectName} repoName={repoName}, isDeletedRepo={isDeletedRepo}, isDestroyedRepo={isDestroyedRepo}, gitRepoId={reposotoryID}, commitId={commitID.Substring(0, 8)} ");// , commitComment=link={artifactLink.Url} {commitDetails.Comment}");
+                                                                                                                                                                                                                                      //Console.WriteLine();
+                                                                                                                                                                                                                                      //Console.WriteLine("===============================================================================");
                             }
-
-
-                            GitCommit commitDetails = null;
-                            //var repo = gitClient.GetRepositoryAsync(repositoryId).Result;
-                            if (isDeletedRepo == false && isDestroyedRepo == false)
-                            {
-                                commitDetails = gitClient.GetCommitAsync(projectId, commitID, reposotoryID).Result;
-                            }
-                            ArtifactLinkCsvRecord record = new ArtifactLinkCsvRecord
-                            {
-                                WorkItemID = item.Id,
-                                WorkItemUrl = item.Url,
-                                ArtifactUri = artifactLink.Url,
-                                commitID = commitID,
-                                IsDeletedRepo = isDeletedRepo,
-                                isDestroyedRepo = isDestroyedRepo,
-                                isTargetingExpectedProject = isTargetingExpectedProject,
-                                isTargetingExpectedRepo = isTargetingExpectedRepo,
-                                LinkedProjectName = projectName,
-                                LinkedRepoId = reposotoryID,
-                                LinkedRepoName = repoName,
-                                shortCommitID = commitID.Substring(0, 8)
-                            };
-
-                            records.Add(record);
-                            Console.WriteLine($"projectName={projectName} repoName={repoName}, isDeletedRepo={isDeletedRepo}, isDestroyedRepo={isDestroyedRepo}, gitRepoId={reposotoryID}, commitId={commitID.Substring(0, 8)} ");// , commitComment=link={artifactLink.Url} {commitDetails.Comment}");
-                                                                                                                                                                                                                                  //Console.WriteLine();
-                                                                                                                                                                                                                                  //Console.WriteLine("===============================================================================");
                         }
                     }
                 }
-            }
-
+            } while (startIndex  < wiIds.Count -1);
             using (var writer = new StreamWriter(csvFilePath))
             {
                 using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
@@ -202,7 +207,8 @@ namespace UpdateWorkItems
 
             private static VssConnection GetConnection(string collectionUrl)
         {
-            return new VssConnection(new Uri(collectionUrl), new WindowsCredential(true));
+            return new VssConnection(new Uri(collectionUrl), new VssBasicCredential("PAT", "PAT"));
+            //return new VssConnection(new Uri(collectionUrl), new WindowsCredential(true));
         }
 
         private static string GetProjectName(ProjectHttpClient projectHttpClient, string projectID)
