@@ -213,7 +213,17 @@ namespace UpdateWorkItems
 
         private static string GetProjectName(ProjectHttpClient projectHttpClient, string projectID)
         {
-            return GetprojectDetails(projectHttpClient,projectID).Name;
+            string projectName = string.Empty;
+            try
+            {
+                projectName = GetprojectDetails(projectHttpClient, projectID).Name;
+            }
+            catch(AggregateException ex)
+            {
+                Console.WriteLine($"could not get project name for id={projectID} ");
+                Console.WriteLine(ex.Message);
+            }
+            return projectName;
         }
 
         private static TeamProject GetprojectDetails(ProjectHttpClient projectHttpClient, string projectID)
