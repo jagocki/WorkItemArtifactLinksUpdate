@@ -38,7 +38,7 @@ namespace UpdateWorkItems
                     "CSV file to store infomation about ht eartifact links"),
                 new Option<string>(
                     "--collection-url", () => "http://almlab-tfs/DefaultCollection",
-                    "Azure DevOps Server collection url with both team projects"),
+                    "Azure DevOps Server collection or Azure DevOps organization url with both team projects"),
                 new Option<bool>(
                     "--validate-only", () => false,
                     "Indicates if the links should be deleted, or if the selection logic only should be run"),
@@ -47,7 +47,7 @@ namespace UpdateWorkItems
                     "PAT for Azure DevOps authentication")
             };
             
-            rootCommand.Description = "Quick fix application for work items artifacts links targeting the wrong repository";
+            rootCommand.Description = "Quick fix application for work items artifacts links targeting the wrong repository or project";
 
             rootCommand.Handler = CommandHandler.Create<string, string, string, string, string, bool, string>((workitemsSourceProject, targetTeamProject, targetRepoName, collectionUrl, csvOutputPath, validateOnly, PAT) =>
             {
@@ -60,21 +60,21 @@ namespace UpdateWorkItems
                 string patString = PAT == string.Empty ? string.Empty : "*****";
                 Console.WriteLine($"The value for --PAT is: {patString}");
 
-                DumpWorkItemsArtifactLinks2(workitemsSourceProject, targetTeamProject,targetRepoName, collectionUrl, csvOutputPath, validateOnly);
+                DeleteWrongWorkItemArtifactLinks(workitemsSourceProject, targetTeamProject,targetRepoName, collectionUrl, csvOutputPath, validateOnly);
             });
 
             return rootCommand.Invoke(args);
 
         }
 
-        private static void DumpWorkItemsArtifactLinks2(string workitemSource, string targetTeamProject, string targetRepoName, string collectionUrl, string csvFilePath, bool validateOnly)
+        private static void DeleteWrongWorkItemArtifactLinks(string workitemSource, string targetTeamProject, string targetRepoName, string collectionUrl, string csvFilePath, bool validateOnly)
         {
             //samples: https://github.com/microsoft/azure-devops-dotnet-samples/blob/master/ClientLibrary/Quickstarts/dotnet/WitQuickStarts/Samples/CreateBug.cs
 
             WorkItemArtifactLinksProcessor processor = new WorkItemArtifactLinksProcessor();
             processor.CreateClients(collectionUrl);
             processor.RangeIncrement = 200;
-            processor.WorkItemQuery = "select [ID] from workitems where [ID] = 406";
+            //processor.WorkItemQuery = "select [ID] from workitems where [ID] = 406";
             var records = processor.GetWorkItemArtifactsLinks(workitemSource, targetTeamProject, targetRepoName);
             processor.DeleteArtifactLinks(records, item => item.IsDeletedRepo || item.isDestroyedRepo, validateOnly);
             using (var writer = new StreamWriter(csvFilePath))
@@ -87,58 +87,5 @@ namespace UpdateWorkItems
 
         }
 
-        private static WorkItemQueryResult GetWorkItemsWithArtifactLinks(WorkItemTrackingHttpClient client)
-        {
-            Wiql wiql = new Wiql()
-            {
-                Query = "select [ID] from workitems where [External link count] > 0"
-            };
-            return client.QueryByWiqlAsync(wiql).Result;
-
-        }
-
-        private static List<int> GetWorkItemsIds(WorkItemTrackingHttpClient client)
-        {
-            WorkItemQueryResult workItemQueryResult = GetWorkItemsWithArtifactLinks(client);
-            List<int> list = new List<int>();
-
-            if (workItemQueryResult.WorkItems.Count() != 0)
-            {
-                foreach (var item in workItemQueryResult.WorkItems)
-                {
-                    list.Add(item.Id);
-                }
-
-            }
-
-            return list;
-
-        }
-
-            private static VssConnection GetConnection(string collectionUrl)
-        {
-            //return new VssConnection(new Uri(collectionUrl), new VssBasicCredential("PAT", "PAT"));
-            return new VssConnection(new Uri(collectionUrl), new WindowsCredential(true));
-        }
-
-        private static string GetProjectName(ProjectHttpClient projectHttpClient, string projectID)
-        {
-            string projectName = string.Empty;
-            try
-            {
-                projectName = GetprojectDetails(projectHttpClient, projectID).Name;
-            }
-            catch(AggregateException ex)
-            {
-                Console.WriteLine($"could not get project name for id={projectID} ");
-                Console.WriteLine(ex.Message);
-            }
-            return projectName;
-        }
-
-        private static TeamProject GetprojectDetails(ProjectHttpClient projectHttpClient, string projectID)
-        {
-            return projectHttpClient.GetProject(projectID).Result;
-        }
     }
 }

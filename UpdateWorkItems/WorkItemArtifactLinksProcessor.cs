@@ -128,26 +128,31 @@ namespace UpdateWorkItems
             int index = 0;
             WorkItem previousWorkItem = null;
 
-            if (itemsToDelete.Count > 0)
-            {
-                revNumber = itemsToDelete[0].Rev;
-                index = itemsToDelete[0].ArtifactLinkIndex;
-            }
+            //if (itemsToDelete.Count > 0)
+            //{
+            //    revNumber = itemsToDelete[0].Rev;
+            //    index = itemsToDelete[0].ArtifactLinkIndex;
+            //}
             foreach(ArtifactLinkRecord item in itemsToDelete)
             {
                 item.SelectedForDeletion = true;
                 string action = "Validating attempt";
-                if(!validateOnly)
+                if (!validateOnly)
                 {
                     action = "Attempting";
                 }
 
-                if (previousWorkItem != null)
+                if (previousWorkItem != null && previousWorkItem.Id == item.WorkItemID)
                 {
                     index = previousWorkItem.Relations.IndexOf(
                             previousWorkItem.Relations.Where(element => element.Url == item.ArtifactUri).Single()
                             );
                     revNumber = previousWorkItem.Rev.Value;
+                }
+                else
+                {
+                    revNumber = item.Rev;
+                    index = item.ArtifactLinkIndex;
                 }
 
                 JsonPatchDocument patchDocument = JsonPatchBuilder.CreateDeleteArtifactLinkPatch(revNumber, index);
