@@ -13,6 +13,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using CsvHelper;
+using Microsoft.VisualStudio.Services.WebApi.Patch.Json;
+using Microsoft.VisualStudio.Services.WebApi.Patch;
 
 namespace UpdateWorkItems
 {
@@ -33,29 +35,56 @@ namespace UpdateWorkItems
                     "Name of Git repo that the work items should target"),
                 new Option<string>(
                     "--csv-output-path", () => @"C:\Users\adam.ALMLAB\Source\Repos\UpdateWorkItems\UpdateWorkItems\bin\Debug\netcoreapp3.0\artifactsLinks.csv",
-                    "Name of Git repo that the work items should target"),
+                    "CSV file to store infomation about ht eartifact links"),
                 new Option<string>(
                     "--collection-url", () => "http://almlab-tfs/DefaultCollection",
-                    "Azure DevOps Server collection url with both team projects")
+                    "Azure DevOps Server collection url with both team projects"),
+                new Option<bool>(
+                    "--validate-only", () => true,
+                    "Indicates if the links should be deleted, or if the selection logic only should be run")
             };
             
             rootCommand.Description = "Quick fix application for work items artifacts links targeting the wrong repository";
 
-            rootCommand.Handler = CommandHandler.Create<string, string, string, string, string>((workitemsSourceProject, targetTeamProject, targetRepoName, collectionUrl, csvOutputPath) =>
+            rootCommand.Handler = CommandHandler.Create<string, string, string, string, string, bool>((workitemsSourceProject, targetTeamProject, targetRepoName, collectionUrl, csvOutputPath, validateOnly) =>
             {
                 Console.WriteLine($"The value for --workitems-source-project is: {workitemsSourceProject}");
                 Console.WriteLine($"The value for --target-teamproject is: {targetTeamProject}");
                 Console.WriteLine($"The value for --target-repo-name is: {targetRepoName}");
                 Console.WriteLine($"The value for --collection-url is: {collectionUrl}");
                 Console.WriteLine($"The value for --csv-output-path is: {csvOutputPath}");
+                Console.WriteLine($"The value for --validate-only is: {validateOnly}");
 
-                DumpWorkItemsArtifactLinks(workitemsSourceProject, targetTeamProject,targetRepoName, collectionUrl, csvOutputPath);
+
+                DumpWorkItemsArtifactLinks2(workitemsSourceProject, targetTeamProject,targetRepoName, collectionUrl, csvOutputPath, validateOnly);
             });
 
             // Parse the incoming args and invoke the handler
             return rootCommand.Invoke(args);
 
         }
+
+        private static void DumpWorkItemsArtifactLinks2(string workitemSource, string targetTeamProject, string targetRepoName, string collectionUrl, string csvFilePath, bool validateOnly)
+        {
+            //sample to follow
+            //https://github.com/microsoft/azure-devops-dotnet-samples/blob/master/ClientLibrary/Quickstarts/dotnet/WitQuickStarts/Samples/CreateBug.cs
+
+            WorkItemArtifactLinksProcessor processor = new WorkItemArtifactLinksProcessor();
+            processor.CreateClients(collectionUrl);
+            processor.RangeIncrement = 200;
+            var records = processor.GetWorkItemArtifactsLinks(workitemSource, targetTeamProject, targetRepoName);
+            processor.DeleteArtifactLinks(records, item => item.IsDeletedRepo || item.isDestroyedRepo, validateOnly);
+            using (var writer = new StreamWriter(csvFilePath))
+            {
+                using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
+                {
+                    csv.WriteRecords(records);
+                }
+            }
+
+
+        }
+
 
         private static void DumpWorkItemsArtifactLinks(string workitemSource, string targetTeamProject, string targetRepoName, string collectionUrl,string csvFilePath)
         {
@@ -67,7 +96,7 @@ namespace UpdateWorkItems
             ProjectHttpClient projectHttpClient = connection.GetClient<ProjectHttpClient>();
 
 
-            List<ArtifactLinkCsvRecord> records = new List<ArtifactLinkCsvRecord>();
+            List<ArtifactLinkRecord> records = new List<ArtifactLinkRecord>();
 
             var wiIds = GetWorkItemsIds(workItemTrackingHttpClient);
             GitHttpClient gitClient = connection.GetClient<GitHttpClient>();
@@ -80,9 +109,9 @@ namespace UpdateWorkItems
                 foreach (var item in workItemTrackingHttpClient.GetWorkItemsAsync(tempids, expand: WorkItemExpand.Relations).Result)
                 {
 
-                    //var item = workItemTrackingHttpClient.GetWorkItemAsync(workitemSource, 406, expand: WorkItemExpand.Relations).Result;
+                    
                     var gitCommits = item.Relations.Where(element => element.Rel == "ArtifactLink");
-                    //  vstfs:///Git/Commit/{project ID}/{repository ID}/{Commit ID}"
+                    
                     var targetGitRepoDetails = gitClient.GetRepositoryAsync(targetTeamProject, targetRepoName).Result;
                     TeamProject targetProjectDetails = GetprojectDetails(projectHttpClient, targetTeamProject);
 
@@ -114,9 +143,6 @@ namespace UpdateWorkItems
                                 else
                                 {
                                     var activeProjectRepos = gitClient.GetRepositoriesAsync(projectId).Result;
-                                    //we assume we will have some selection criteria
-                                    //var selectedRepo = repos.Where(item => item.Id == reposotoryID);
-
 
                                     var linkedActiveRepo = (from r in activeProjectRepos where r.Id == reposotoryID select r).SingleOrDefault();
                                     if (linkedActiveRepo == null)
@@ -153,7 +179,7 @@ namespace UpdateWorkItems
                                 {
                                     commitDetails = gitClient.GetCommitAsync(projectId, commitID, reposotoryID).Result;
                                 }
-                                ArtifactLinkCsvRecord record = new ArtifactLinkCsvRecord
+                                ArtifactLinkRecord record = new ArtifactLinkRecord
                                 {
                                     WorkItemID = item.Id,
                                     WorkItemUrl = item.Url,
@@ -171,13 +197,18 @@ namespace UpdateWorkItems
 
                                 records.Add(record);
                                 Console.WriteLine($"workItemID={item.Id} projectName={projectName} repoName={repoName}, isDeletedRepo={isDeletedRepo}, isDestroyedRepo={isDestroyedRepo}, gitRepoId={reposotoryID}, commitId={commitID.Substring(0, 8)} ");// , commitComment=link={artifactLink.Url} {commitDetails.Comment}");
-                                                                                                                                                                                                                                      //Console.WriteLine();
-                                                                                                                                                                                                                                      //Console.WriteLine("===============================================================================");
+                                //https://github.com/microsoft/azure-devops-dotnet-samples/blob/master/ClientLibrary/Samples/WorkItemTracking/WorkItemsSample.cs
+                                if (isDestroyedRepo || isDeletedRepo)
+                                {
+                                    JsonPatchDocument patchDocument = JsonPatchBuilder.CreateDeleteArtifactLinkPatch(item.Rev.Value, item.Relations.IndexOf(artifactLink));
+                                    WorkItem result = workItemTrackingHttpClient.UpdateWorkItemAsync(patchDocument, item.Id.GetValueOrDefault()).Result;
+                                }
                             }
                         }
                     }
                 }
             } while (startIndex  < wiIds.Count -1);
+
             using (var writer = new StreamWriter(csvFilePath))
             {
                 using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))

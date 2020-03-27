@@ -4,7 +4,7 @@ using System.Text;
 
 namespace UpdateWorkItems
 {
-    public class ArtifactLinkCsvRecord
+    public class ArtifactLinkRecord
     {
         public int? WorkItemID
         {
@@ -51,6 +51,27 @@ namespace UpdateWorkItems
             get;set;
         }
         public string ArtifactUri
+        {
+            get;set;
+        }
+        public int Rev
+        {
+            get;set;
+        }
+        public int ArtifactLinkIndex
+        {
+            get;set;
+        }
+        public bool SelectedForDeletion
+        {
+            get;set;
+        }
+        public bool Deleted
+        {
+            get;set;
+        }
+
+        public string Message
         {
             get;set;
         }
