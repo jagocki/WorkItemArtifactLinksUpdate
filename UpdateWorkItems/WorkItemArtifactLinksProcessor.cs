@@ -82,6 +82,8 @@ namespace UpdateWorkItems
                         string[] ids = WebUtility.UrlDecode(artifactLink.Url).Split('/');
                         if (ids[4] == "Commit")
                         {
+                            ArtifactLinkRecord record = ValidateTHe
+
                             string commitID = ids[7];
                             Guid reposotoryID = Guid.Parse(ids[6]);
                             Guid projectId = Guid.Parse(ids[5]);
