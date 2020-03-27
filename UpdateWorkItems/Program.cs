@@ -41,12 +41,15 @@ namespace UpdateWorkItems
                     "Azure DevOps Server collection url with both team projects"),
                 new Option<bool>(
                     "--validate-only", () => true,
-                    "Indicates if the links should be deleted, or if the selection logic only should be run")
+                    "Indicates if the links should be deleted, or if the selection logic only should be run"),
+                new Option<string>(
+                    "--PAT", () => string.Empty,
+                    "PAT for Azure DevOps authentication")
             };
             
             rootCommand.Description = "Quick fix application for work items artifacts links targeting the wrong repository";
 
-            rootCommand.Handler = CommandHandler.Create<string, string, string, string, string, bool>((workitemsSourceProject, targetTeamProject, targetRepoName, collectionUrl, csvOutputPath, validateOnly) =>
+            rootCommand.Handler = CommandHandler.Create<string, string, string, string, string, bool, string>((workitemsSourceProject, targetTeamProject, targetRepoName, collectionUrl, csvOutputPath, validateOnly, PAT) =>
             {
                 Console.WriteLine($"The value for --workitems-source-project is: {workitemsSourceProject}");
                 Console.WriteLine($"The value for --target-teamproject is: {targetTeamProject}");
@@ -54,24 +57,24 @@ namespace UpdateWorkItems
                 Console.WriteLine($"The value for --collection-url is: {collectionUrl}");
                 Console.WriteLine($"The value for --csv-output-path is: {csvOutputPath}");
                 Console.WriteLine($"The value for --validate-only is: {validateOnly}");
-
+                string patString = PAT == string.Empty ? string.Empty : "*****";
+                Console.WriteLine($"The value for --PAT is: {patString}");
 
                 DumpWorkItemsArtifactLinks2(workitemsSourceProject, targetTeamProject,targetRepoName, collectionUrl, csvOutputPath, validateOnly);
             });
 
-            // Parse the incoming args and invoke the handler
             return rootCommand.Invoke(args);
 
         }
 
         private static void DumpWorkItemsArtifactLinks2(string workitemSource, string targetTeamProject, string targetRepoName, string collectionUrl, string csvFilePath, bool validateOnly)
         {
-            //sample to follow
-            //https://github.com/microsoft/azure-devops-dotnet-samples/blob/master/ClientLibrary/Quickstarts/dotnet/WitQuickStarts/Samples/CreateBug.cs
+            //samples: https://github.com/microsoft/azure-devops-dotnet-samples/blob/master/ClientLibrary/Quickstarts/dotnet/WitQuickStarts/Samples/CreateBug.cs
 
             WorkItemArtifactLinksProcessor processor = new WorkItemArtifactLinksProcessor();
             processor.CreateClients(collectionUrl);
             processor.RangeIncrement = 200;
+            processor.WorkItemQuery = "select [ID] from workitems where [ID] = 4";
             var records = processor.GetWorkItemArtifactsLinks(workitemSource, targetTeamProject, targetRepoName);
             processor.DeleteArtifactLinks(records, item => item.IsDeletedRepo || item.isDestroyedRepo, validateOnly);
             using (var writer = new StreamWriter(csvFilePath))
@@ -81,7 +84,6 @@ namespace UpdateWorkItems
                     csv.WriteRecords(records);
                 }
             }
-
 
         }
 

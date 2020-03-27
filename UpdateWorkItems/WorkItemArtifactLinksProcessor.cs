@@ -56,7 +56,7 @@ namespace UpdateWorkItems
 
             do
             {
-                var tempids = wiIds.GetRange(startIndex, Math.Min(RangeIncrement, wiIds.Count - 1 - startIndex));
+                var tempids = wiIds.GetRange(startIndex, Math.Min(RangeIncrement, wiIds.Count - startIndex));
                 startIndex += RangeIncrement;
                 records.AddRange(GetWorkItemRangeArtifactLinks(tempids, workitemSource, targetTeamProject, targetRepoName));
                 
