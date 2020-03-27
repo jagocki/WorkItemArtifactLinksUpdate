@@ -58,68 +58,109 @@ namespace UpdateWorkItems
             {
                 var tempids = wiIds.GetRange(startIndex, Math.Min(RangeIncrement, wiIds.Count - startIndex));
                 startIndex += RangeIncrement;
-                records.AddRange(GetWorkItemRangeArtifactLinks(tempids, workitemSource, targetTeamProject, targetRepoName));
+                records.AddRange(GetWorkItemRangeArtifactLinks(tempids/*, workitemSource*/, targetTeamProject, targetRepoName));
                 
             } while (startIndex < wiIds.Count - 1);
 
             return records;
         }
 
-        private List<ArtifactLinkRecord> GetWorkItemRangeArtifactLinks(List<int> workItemIds, string workitemSource, string targetTeamProject, string targetRepoName)
+        private List<ArtifactLinkRecord> GetWorkItemRangeArtifactLinks(List<int> workItemIds/*, string workitemSource*/, string targetTeamProject, string targetRepoName)
         {
             List<ArtifactLinkRecord> records = new List<ArtifactLinkRecord>();
 
             foreach (var item in workItemTrackingHttpClient.GetWorkItemsAsync(workItemIds, expand: WorkItemExpand.Relations).Result)
             {
-                var gitCommits = item.Relations.Where(element => element.Rel == "ArtifactLink");
+                var artifactWorkItemLinks = item.Relations.Where(element => element.Rel == "ArtifactLink");
 
-                var targetGitRepoDetails = gitClient.GetRepositoryAsync(targetTeamProject, targetRepoName).Result;
-                
-                foreach (var artifactLink in gitCommits)
+                foreach (var artifactLink in artifactWorkItemLinks)
                 {
-                    if (artifactLink.Url.Contains("Git")) 
-                    {
-                        string[] ids = WebUtility.UrlDecode(artifactLink.Url).Split('/');
-                        if (ids[4] == "Commit")
-                        {
-                            ArtifactLinkRecord record = ValidateTHe
-
-                            string commitID = ids[7];
-                            Guid reposotoryID = Guid.Parse(ids[6]);
-                            Guid projectId = Guid.Parse(ids[5]);
-                            ProjectStatus projStatus = CheckActiveProject(projectId, targetTeamProject);
-
-                            if(!string.IsNullOrEmpty(projStatus.ProjectName))
-                            {
-                                projStatus = CheckActiveRepos(targetRepoName, projectId, reposotoryID, projStatus);
-                            }
-
-                            ArtifactLinkRecord record = new ArtifactLinkRecord
-                            {
-                                WorkItemID = item.Id,
-                                WorkItemUrl = item.Url,
-                                ArtifactUri = artifactLink.Url,
-                                commitID = commitID,
-                                IsDeletedRepo = projStatus.IsDeletedRepo,
-                                isDestroyedRepo = projStatus.IsDestroyedRepo,
-                                isTargetingExpectedProject = projStatus.IsTargetingExpectedProject,
-                                isTargetingExpectedRepo = projStatus.IsTargetingExpectedRepo,
-                                LinkedProjectName = projStatus.ProjectName,
-                                LinkedRepoId = reposotoryID,
-                                LinkedRepoName = projStatus.RepoName,
-                                shortCommitID = commitID.Substring(0, 8),
-                                Rev = item.Rev.Value,
-                                ArtifactLinkIndex = item.Relations.IndexOf(artifactLink)
-                            };
-
-                            records.Add(record);
-
-                        }
-                    }
+                    ArtifactLinkRecord record = ValidateArtifactLink(item, artifactLink, targetTeamProject, targetRepoName);
+                    records.Add(record);
                 }
                 Console.WriteLine($"Analyzing workItemID={item.Id}");
             }
+
             return records;
+        }
+
+        private ArtifactLinkRecord ValidateArtifactLink(WorkItem item, WorkItemRelation artifactLink, string targetTeamProject, string targetRepoName)
+        {
+            GitArtifactLinkDetails details = new GitArtifactLinkDetails(artifactLink, item.Relations.IndexOf(artifactLink));
+            if (details.IsGitLink)
+            {
+                if (details.LinkType == GitLinkType.Commit)
+                {
+                    return ValidateTheGitCommitLink(item, targetTeamProject, targetRepoName, details);
+                }
+                else if (details.LinkType == GitLinkType.PullRequest)
+                {
+                    return ValidatePullRequestLink(item, targetTeamProject, targetRepoName, details);
+                }
+            }
+
+            return null;
+        }
+
+        private ArtifactLinkRecord ValidatePullRequestLink(WorkItem item, string targetTeamProject, string targetRepoName, GitArtifactLinkDetails linkDetails)
+        {
+            ProjectStatus projStatus = CheckProjecStatus(targetTeamProject, targetRepoName, linkDetails);
+            
+            ArtifactLinkRecord record = new ArtifactLinkRecord
+            {
+                WorkItemID = item.Id,
+                WorkItemUrl = item.Url,
+                ArtifactUri = linkDetails.Url,
+                PullRequestID = linkDetails.PullRequestID,
+                IsDeletedRepo = projStatus.IsDeletedRepo,
+                isDestroyedRepo = projStatus.IsDestroyedRepo,
+                isTargetingExpectedProject = projStatus.IsTargetingExpectedProject,
+                isTargetingExpectedRepo = projStatus.IsTargetingExpectedRepo,
+                LinkedProjectName = projStatus.ProjectName,
+                LinkedRepoId = linkDetails.RepositoryID,
+                LinkedRepoName = projStatus.RepoName,
+                Rev = item.Rev.Value,
+                ArtifactLinkIndex = linkDetails.Index
+            };
+
+            return record;
+        }
+
+        private ArtifactLinkRecord ValidateTheGitCommitLink(WorkItem item, string targetTeamProject, string targetRepoName, GitArtifactLinkDetails linkDetails)
+        {
+            ProjectStatus projStatus = CheckProjecStatus(targetTeamProject, targetRepoName, linkDetails);
+
+            ArtifactLinkRecord record = new ArtifactLinkRecord
+            {
+                WorkItemID = item.Id,
+                WorkItemUrl = item.Url,
+                ArtifactUri = linkDetails.Url,
+                commitID = linkDetails.CommitID,
+                IsDeletedRepo = projStatus.IsDeletedRepo,
+                isDestroyedRepo = projStatus.IsDestroyedRepo,
+                isTargetingExpectedProject = projStatus.IsTargetingExpectedProject,
+                isTargetingExpectedRepo = projStatus.IsTargetingExpectedRepo,
+                LinkedProjectName = projStatus.ProjectName,
+                LinkedRepoId = linkDetails.RepositoryID,
+                LinkedRepoName = projStatus.RepoName,
+                shortCommitID = linkDetails.CommitID.Substring(0, 8),
+                Rev = item.Rev.Value,
+                ArtifactLinkIndex = linkDetails.Index
+            };
+
+            return record;
+        }
+
+        private ProjectStatus CheckProjecStatus(string targetTeamProject, string targetRepoName, GitArtifactLinkDetails linkDetails)
+        {
+            ProjectStatus projStatus = CheckActiveProject(linkDetails.ProjectId, targetTeamProject);
+
+            if (!string.IsNullOrEmpty(projStatus.ProjectName))
+            {
+                projStatus = CheckActiveRepos(targetRepoName, linkDetails.ProjectId, linkDetails.RepositoryID, projStatus);
+            }
+
+            return projStatus;
         }
 
         public List<ArtifactLinkRecord> DeleteArtifactLinks(List<ArtifactLinkRecord> records, Func<ArtifactLinkRecord,bool> predicate, bool validateOnly = true)
@@ -130,11 +171,6 @@ namespace UpdateWorkItems
             int index = 0;
             WorkItem previousWorkItem = null;
 
-            //if (itemsToDelete.Count > 0)
-            //{
-            //    revNumber = itemsToDelete[0].Rev;
-            //    index = itemsToDelete[0].ArtifactLinkIndex;
-            //}
             foreach(ArtifactLinkRecord item in itemsToDelete)
             {
                 item.SelectedForDeletion = true;
@@ -245,9 +281,8 @@ namespace UpdateWorkItems
                 }
 
             }
-
             return list;
-
+        
         }
 
         private async Task<WorkItemQueryResult> GetWorkItemsWithArtifactLinks(string workitemSource)
@@ -278,6 +313,7 @@ namespace UpdateWorkItems
                 Console.WriteLine($"could not get project name for id={projectID} ");
                 Console.WriteLine(ex.Message);
             }
+
             return projectName;
         }
 
@@ -286,7 +322,6 @@ namespace UpdateWorkItems
             if (string.IsNullOrEmpty(PAT))
             {
                 return new VssConnection(new Uri(collectionUrl), new WindowsCredential(true));
-
             }
             else
             {

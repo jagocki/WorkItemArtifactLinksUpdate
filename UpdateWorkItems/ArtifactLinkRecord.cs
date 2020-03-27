@@ -46,6 +46,10 @@ namespace UpdateWorkItems
         {
             get;set;
         }
+        public int PullRequestID
+        {
+            get;set;
+        }
         public string shortCommitID
         {
             get;set;
