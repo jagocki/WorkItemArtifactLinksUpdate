@@ -75,8 +75,13 @@ namespace UpdateWorkItems
 
                 foreach (var artifactLink in artifactWorkItemLinks)
                 {
-                    ArtifactLinkRecord record = ValidateArtifactLink(item, artifactLink, targetTeamProject, targetRepoName);
-                    records.Add(record);
+                    
+                    GitArtifactLinkDetails details = new GitArtifactLinkDetails(artifactLink, item.Relations.IndexOf(artifactLink));
+                    if (details.IsGitLink)
+                    {
+                        ArtifactLinkRecord record = ValidateArtifactLink(item, details, targetTeamProject, targetRepoName);
+                        records.Add(record);
+                    }
                 }
                 Console.WriteLine($"Analyzing workItemID={item.Id}");
             }
@@ -84,11 +89,8 @@ namespace UpdateWorkItems
             return records;
         }
 
-        private ArtifactLinkRecord ValidateArtifactLink(WorkItem item, WorkItemRelation artifactLink, string targetTeamProject, string targetRepoName)
+        private ArtifactLinkRecord ValidateArtifactLink(WorkItem item, GitArtifactLinkDetails details, string targetTeamProject, string targetRepoName)
         {
-            GitArtifactLinkDetails details = new GitArtifactLinkDetails(artifactLink, item.Relations.IndexOf(artifactLink));
-            if (details.IsGitLink)
-            {
                 if (details.LinkType == GitLinkType.Commit)
                 {
                     return ValidateTheGitCommitLink(item, targetTeamProject, targetRepoName, details);
@@ -97,7 +99,6 @@ namespace UpdateWorkItems
                 {
                     return ValidatePullRequestLink(item, targetTeamProject, targetRepoName, details);
                 }
-            }
 
             return null;
         }

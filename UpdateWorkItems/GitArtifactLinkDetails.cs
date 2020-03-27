@@ -24,11 +24,11 @@ namespace UpdateWorkItems
             Index = linkIndex;
             if (Url.Contains("Git"))
             {
-                IsGitLink = true;
                 string[] ids = WebUtility.UrlDecode(Url).Split('/');
 
                 if (ids[4] == "Commit")
                 {
+                     IsGitLink = true;
                     CommitID = ids[7];
                     RepositoryID = Guid.Parse(ids[6]);
                     ProjectId = Guid.Parse(ids[5]);
@@ -36,16 +36,17 @@ namespace UpdateWorkItems
                 }
                 else if (ids[4] == "PullRequestId")
                 {
+                    IsGitLink = true;
                     ProjectId = Guid.Parse(ids[5]);
                     LinkType = GitLinkType.PullRequest;
                     RepositoryID = Guid.Parse(ids[6]);
                     PullRequestID = int.Parse(ids[7]);
                 }
-            }
-            else
-            {
-                throw new ArgumentException("Link Type not recognized!");
-
+                //we don't handle the other cases as for now like 'Ref'links to branches 
+                //else
+                //{
+                //    throw new ArgumentException("Link Type not recognized!");
+                //}
             }
         }
     }

@@ -40,7 +40,7 @@ namespace UpdateWorkItems
                     "--collection-url", () => "http://almlab-tfs/DefaultCollection",
                     "Azure DevOps Server collection or Azure DevOps organization url with both team projects"),
                 new Option<bool>(
-                    "--validate-only", () => false,
+                    "--validate-only", () => true,
                     "Indicates if the links should be deleted, or if the selection logic only should be run"),
                 new Option<string>(
                     "--PAT", () => string.Empty,
