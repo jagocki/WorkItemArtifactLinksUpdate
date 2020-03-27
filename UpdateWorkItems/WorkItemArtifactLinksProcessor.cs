@@ -124,6 +124,15 @@ namespace UpdateWorkItems
         {
             List<ArtifactLinkRecord> itemsToDelete = new List<ArtifactLinkRecord>();
             itemsToDelete.AddRange(records.Where(predicate) );
+            int revNumber=0;
+            int index = 0;
+            WorkItem previousWorkItem = null;
+
+            if (itemsToDelete.Count > 0)
+            {
+                revNumber = itemsToDelete[0].Rev;
+                index = itemsToDelete[0].ArtifactLinkIndex;
+            }
             foreach(ArtifactLinkRecord item in itemsToDelete)
             {
                 item.SelectedForDeletion = true;
@@ -132,16 +141,25 @@ namespace UpdateWorkItems
                 {
                     action = "Attempting";
                 }
-                Console.WriteLine($"{action} to delete workItemID={item.WorkItemID}, artifactLinkIndex={item.ArtifactLinkIndex}");
 
-                JsonPatchDocument patchDocument = JsonPatchBuilder.CreateDeleteArtifactLinkPatch(item.Rev, item.ArtifactLinkIndex);
+                if (previousWorkItem != null)
+                {
+                    index = previousWorkItem.Relations.IndexOf(
+                            previousWorkItem.Relations.Where(element => element.Url == item.ArtifactUri).Single()
+                            );
+                    revNumber = previousWorkItem.Rev.Value;
+                }
+
+                JsonPatchDocument patchDocument = JsonPatchBuilder.CreateDeleteArtifactLinkPatch(revNumber, index);
+                Console.WriteLine($"{action} to delete workItemID={item.WorkItemID}, revNumber={revNumber}");
+
                 try
                 {
                     if (!validateOnly)
                     {
-                        WorkItem result = workItemTrackingHttpClient.UpdateWorkItemAsync(patchDocument, item.WorkItemID.Value).Result;
+                        previousWorkItem = workItemTrackingHttpClient.UpdateWorkItemAsync(patchDocument, item.WorkItemID.Value).Result;
                         Console.WriteLine($"Deleted workItemID={item.WorkItemID}, artifactLinkIndex={item.ArtifactLinkIndex}");
-
+                        item.Deleted = true;
                     }
                 }
                 catch(AggregateException ex)
